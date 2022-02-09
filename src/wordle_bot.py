@@ -1,5 +1,13 @@
+import math
+
+
 # ------------------- Weights -------------------
+WT_LETTER_COUNT_PER_POSITION = 0.60
+WT_LETTER_COUNT_TOTAL = 0.20
 WT_FIRST_WORD_LETTER_REPEAT = 0.50
+WT_WORD_COMMONALITY = 0.50
+WORD_COMMONALITY_MAX_SET = 20
+WORD_COMMONALITY_MAX_SCORE = 1226734006
 
 # -----------------------------------------------
 
@@ -23,15 +31,33 @@ def init_letter_freq_dict(file_path):
     return letter_freqs
 
 
-def compute_word_score(word, letter_freqs, word_number):
+def init_word_commonality_dict(file_path, word_set):
+    word_commonality = {}
+    with open(file_path) as file:
+        for next_line in file:
+            (key, val) = next_line.split()
+            if key in word_set:
+                word_commonality[key] = int(val)
+
+    return word_commonality
+
+
+def compute_word_score(word, letter_freqs, word_commonality, word_number, words_remaining):
     score = 0
     used_letters = set()
     for idx, next_letter in enumerate(word):
-        letter_score = letter_freqs[next_letter][idx]
+        letter_score = letter_freqs[next_letter][idx] * WT_LETTER_COUNT_PER_POSITION\
+                       + sum(letter_freqs[next_letter]) * WT_LETTER_COUNT_TOTAL
         if next_letter in used_letters and word_number == 1:
             letter_score *= WT_FIRST_WORD_LETTER_REPEAT
         score += letter_score
         used_letters.add(next_letter)
+
+    if words_remaining < WORD_COMMONALITY_MAX_SET and word in word_commonality.keys():
+        word_commonality_scaled = math.log(word_commonality[word]) / math.log(WORD_COMMONALITY_MAX_SCORE)
+        commonality = (word_commonality_scaled * (WORD_COMMONALITY_MAX_SET - words_remaining) * WT_WORD_COMMONALITY) + 1
+        score = score * commonality
+
     return score
 
 
@@ -42,11 +68,11 @@ def init_word_set(file_path):
     return [word for word in cleaned_word_set if len(word) == 5]
 
 
-def find_highest_scoring_word(letter_freqs, word_set, word_number):
+def find_highest_scoring_word(letter_freqs, word_set, word_commonality, word_number, words_remaining):
     highest_score = 0
     highest_word = ""
     for next_word in word_set:
-        score = compute_word_score(next_word, letter_freqs, word_number)
+        score = compute_word_score(next_word, letter_freqs, word_commonality, word_number, words_remaining)
         if score > highest_score:
             highest_score = score
             highest_word = next_word
@@ -147,11 +173,12 @@ def main():
     gray_letters = set()
 
     word_set = init_word_set("Collins Scrabble Words (2019).txt")
+    word_commonality = init_word_commonality_dict('count_1w.txt', word_set)
     letter_freqs = init_letter_freq_dict("Wordles.txt")
 
     num_guesses = 0
 
-    best_word = find_highest_scoring_word(letter_freqs, word_set, num_guesses + 1)
+    best_word = find_highest_scoring_word(letter_freqs, word_set, word_commonality, num_guesses + 1, len(word_set))
 
     print("Best word choice: " + best_word)
     finished = False
@@ -169,7 +196,7 @@ def main():
         else:
             build_clue_sets(green_letters, yellow_letters, gray_letters, best_word, result)
             word_set = pare_word_set(word_set, green_letters, yellow_letters, gray_letters)
-            best_word = find_highest_scoring_word(letter_freqs, word_set, num_guesses + 1)
+            best_word = find_highest_scoring_word(letter_freqs, word_set, word_commonality, num_guesses + 1, len(word_set))
             print("Number of possible words: " + str(len(word_set)))
             print("Best word choice: " + best_word)
 
